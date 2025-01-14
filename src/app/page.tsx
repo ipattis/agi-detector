@@ -134,116 +134,91 @@ export default function Home(): React.ReactElement {
   }, [isAutoCrawling]);
 
   return (
-    <main className="min-h-screen p-8">
+    <main className="min-h-screen bg-gray-50 dark:bg-gray-900 p-8">
       <div className="max-w-7xl mx-auto space-y-8">
-        <h1 className="text-4xl font-bold">AGI Detector</h1>
+        {/* Header Section */}
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8 border border-gray-200 dark:border-gray-700">
+          <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-4">AGI Detector</h1>
+          <p className="text-lg text-gray-600 dark:text-gray-300 mb-6">
+            An advanced monitoring system designed to detect early signs of Artificial General Intelligence (AGI) by analyzing patterns across multiple domains.
+          </p>
+          
+          {/* Features Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+            <div className="bg-blue-50 dark:bg-blue-900/20 p-6 rounded-lg border border-blue-200 dark:border-blue-800">
+              <h3 className="font-semibold text-blue-900 dark:text-blue-100 mb-2">🔍 Comprehensive Monitoring</h3>
+              <p className="text-blue-800 dark:text-blue-200">Tracks AI research papers, news sites, company blogs, and social media for breakthrough indicators</p>
+            </div>
+            <div className="bg-purple-50 dark:bg-purple-900/20 p-6 rounded-lg border border-purple-200 dark:border-purple-800">
+              <h3 className="font-semibold text-purple-900 dark:text-purple-100 mb-2">🧠 Advanced Analysis</h3>
+              <p className="text-purple-800 dark:text-purple-200">Uses NLP to analyze content for signs of AI self-improvement, cross-domain learning, and autonomous behavior</p>
+            </div>
+            <div className="bg-green-50 dark:bg-green-900/20 p-6 rounded-lg border border-green-200 dark:border-green-800">
+              <h3 className="font-semibold text-green-900 dark:text-green-100 mb-2">⚡ Real-time Alerts</h3>
+              <p className="text-green-800 dark:text-green-200">Instant notifications for significant developments or anomalous patterns in AI advancement</p>
+            </div>
+          </div>
+
+          {/* Indicators and Sources */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="bg-gray-50 dark:bg-gray-700/50 p-6 rounded-lg border border-gray-200 dark:border-gray-600">
+              <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-3">Monitored Indicators</h3>
+              <ul className="space-y-2">
+                {MONITORED_INDICATORS.map(indicator => (
+                  <li key={indicator.id} className="flex items-center text-gray-700 dark:text-gray-300">
+                    <span className="mr-2">•</span>
+                    {indicator.text}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="bg-gray-50 dark:bg-gray-700/50 p-6 rounded-lg border border-gray-200 dark:border-gray-600">
+              <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-3">Key Sources</h3>
+              <ul className="space-y-2">
+                {KEY_SOURCES.map(source => (
+                  <li key={source.id} className="flex items-center text-gray-700 dark:text-gray-300">
+                    <span className="mr-2">•</span>
+                    {source.text}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        {/* Stats Overview */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Sources Monitored</h3>
+            <p className="text-3xl font-bold text-blue-600 dark:text-blue-400">{crawlResults.length}</p>
+          </div>
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Potential Indicators</h3>
+            <p className="text-3xl font-bold text-yellow-600 dark:text-yellow-400">{analyses.length}</p>
+          </div>
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">AGI Likelihood Assessment</h3>
+            <p className="text-3xl font-bold text-green-600 dark:text-green-400">
+              {analyses.length > 0 ? 'Medium' : 'Low'}
+            </p>
+          </div>
+        </div>
+
+        {/* Metrics Dashboard */}
         <CrawlMetrics />
-        <div className="container mx-auto px-4 py-8">
-          <div className="p-8">
-            <h1 className="text-4xl font-bold mb-6 text-black">AGI Detection Dashboard</h1>
-            
-            <div className="bg-white/5 rounded-lg p-6 mb-8">
-              <h2 className="text-2xl font-semibold mb-4 text-black">About AGI Detector</h2>
-              <p className="text-black mb-4">
-                An advanced monitoring system designed to detect early signs of Artificial General Intelligence (AGI) by analyzing patterns across multiple domains. Our system continuously monitors research breakthroughs, technological advancements, and anomalous patterns that might indicate the emergence of AGI.
-              </p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm mb-6">
-                <div>
-                  <h3 className="font-semibold mb-1">Monitored Indicators:</h3>
-                  <ul className="list-disc list-inside">
-                    {MONITORED_INDICATORS.map(indicator => (
-                      <li key={indicator.id} className="text-black">
-                        {indicator.text}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-                <div>
-                  <h3 className="font-semibold mb-1">Key Sources:</h3>
-                  <ul className="list-disc list-inside">
-                    {KEY_SOURCES.map(source => (
-                      <li key={source.id} className="text-black">
-                        {source.text}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
-                <div key="feature-1" className="bg-white/10 p-4 rounded-lg">
-                  <h3 className="font-semibold mb-2 text-black">🔍 Comprehensive Monitoring</h3>
-                  <p className="text-sm text-black">Tracks AI research papers, news sites, company blogs, and social media for breakthrough indicators</p>
-                </div>
-                <div key="feature-2" className="bg-white/10 p-4 rounded-lg">
-                  <h3 className="font-semibold mb-2 text-black">🧠 Advanced Analysis</h3>
-                  <p className="text-sm text-black">Uses NLP to analyze content for signs of AI self-improvement, cross-domain learning, and autonomous behavior</p>
-                </div>
-                <div key="feature-3" className="bg-white/10 p-4 rounded-lg">
-                  <h3 className="font-semibold mb-2 text-black">⚡ Real-time Alerts</h3>
-                  <p className="text-sm text-black">Instant notifications for significant developments or anomalous patterns in AI advancement</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Stats Overview */}
-              <div key="stat-1" className="bg-white p-6 rounded-lg shadow">
-                <h3 className="text-lg font-semibold text-black mb-2">Sources Monitored</h3>
-                <p className="text-3xl font-bold text-blue-600">{crawlResults.length}</p>
-              </div>
-              <div key="stat-2" className="bg-white p-6 rounded-lg shadow">
-                <h3 className="text-lg font-semibold text-black mb-2">Potential Indicators</h3>
-                <p className="text-3xl font-bold text-yellow-600">{analyses.length}</p>
-              </div>
-              <div key="stat-3" className="bg-white p-6 rounded-lg shadow">
-                <h3 className="text-lg font-semibold text-black mb-2">AGI Likelihood Assessment</h3>
-                <p className="text-3xl font-bold text-green-600">
-                  {analyses.length > 0 ? 'Medium' : 'Low'}
-                </p>
-              </div>
-            </div>
-
-            {/* Main Content */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              {/* Recent Findings */}
-              <div className="bg-white p-6 rounded-lg shadow">
-                <h2 className="text-xl font-bold text-black mb-4">Recent Findings</h2>
-                <div className="space-y-4">
-                  {crawlResults.length === 0 ? (
-                    <p className="text-black">No recent findings to display.</p>
-                  ) : (
-                    crawlResults.map((result) => (
-                      <div key={result.id} className="border-b border-gray-200 pb-4">
-                        <h3 className="font-semibold text-black">{result.title}</h3>
-                        <p className="text-sm text-black">{result.url}</p>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-
-              {/* Monitored Sources */}
-              <div className="bg-white p-6 rounded-lg shadow">
-                <h2 className="text-xl font-bold text-black mb-4">Monitored Sources</h2>
-                <ul className="space-y-2">
-                  {MONITORED_SOURCES.map(source => (
-                    <li key={source.id} className="text-black">
-                      {source.name}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="mt-8 space-y-4">
-              <div className="flex gap-4">
+        
+        {/* Control Panel */}
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8 border border-gray-200 dark:border-gray-700">
+          <div className="space-y-8">
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">Control Panel</h2>
+              <div className="flex flex-wrap gap-4">
                 <button
                   onClick={() => setIsAutoCrawling(!isAutoCrawling)}
-                  className={`px-6 py-2 rounded-lg font-semibold ${
+                  className={`px-6 py-3 rounded-lg font-semibold text-white shadow-lg transition-all ${
                     isAutoCrawling 
-                      ? 'bg-red-600 hover:bg-red-700 text-white' 
-                      : 'bg-green-600 hover:bg-green-700 text-white'
+                      ? 'bg-red-500 hover:bg-red-600 active:bg-red-700' 
+                      : 'bg-green-500 hover:bg-green-600 active:bg-green-700'
                   }`}
                 >
                   {isAutoCrawling ? 'Stop Auto-Crawling' : 'Start Auto-Crawling'}
@@ -251,34 +226,62 @@ export default function Home(): React.ReactElement {
                 <button
                   onClick={startCrawling}
                   disabled={isLoading || isAutoCrawling}
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-semibold disabled:opacity-50"
+                  className="bg-blue-500 hover:bg-blue-600 active:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isLoading ? 'Processing...' : 'Manual Crawl'}
                 </button>
                 <button
                   onClick={analyzeData}
                   disabled={isLoading || crawlResults.length === 0}
-                  className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2 rounded-lg font-semibold disabled:opacity-50"
+                  className="bg-purple-500 hover:bg-purple-600 active:bg-purple-700 text-white px-6 py-3 rounded-lg font-semibold shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Analyze Data
                 </button>
               </div>
-              
-              {/* Status Information */}
-              <div className="text-sm space-y-1">
-                {lastCrawlTime && (
-                  <p className="text-black">Last crawl: {formatDateTime(new Date(lastCrawlTime))}</p>
-                )}
-                {isAutoCrawling && nextScheduledCrawl && (
-                  <p className="text-green-600">
-                    Next scheduled crawl: {formatDateTime(new Date(nextScheduledCrawl))}
-                  </p>
-                )}
-                {error && (
-                  <p className="text-red-600">{error}</p>
-                )}
-              </div>
             </div>
+
+            {/* Status Information */}
+            <div className="space-y-3">
+              {lastCrawlTime && (
+                <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600">
+                  <p className="text-gray-900 dark:text-white">
+                    <span className="font-medium">Last crawl:</span>{' '}
+                    {formatDateTime(new Date(lastCrawlTime))}
+                  </p>
+                </div>
+              )}
+              {isAutoCrawling && nextScheduledCrawl && (
+                <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
+                  <p className="text-green-800 dark:text-green-200">
+                    <span className="font-medium">Next scheduled crawl:</span>{' '}
+                    {formatDateTime(new Date(nextScheduledCrawl))}
+                  </p>
+                </div>
+              )}
+              {error && (
+                <div className="p-4 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800">
+                  <p className="text-red-800 dark:text-red-200">{error}</p>
+                </div>
+              )}
+            </div>
+
+            {/* Results */}
+            {crawlResults.length > 0 && (
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">Latest Results</h2>
+                <div className="space-y-4">
+                  {crawlResults.map((result) => (
+                    <div key={result.id} className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600">
+                      <h3 className="font-semibold text-gray-900 dark:text-white mb-2">{result.title}</h3>
+                      <a href={result.url} target="_blank" rel="noopener noreferrer" 
+                         className="text-blue-600 dark:text-blue-400 hover:underline break-all">
+                        {result.url}
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
