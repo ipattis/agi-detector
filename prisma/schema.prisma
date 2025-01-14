@@ -14,16 +14,21 @@ datasource db {
 }
 
 model CrawlResult {
-  id        String   @id @default(uuid())
-  url       String
-  title     String
-  content   String
-  timestamp DateTime @default(now())
-  metadata  Json
+  id             String   @id @default(uuid())
+  url            String   @unique
+  title          String
+  content        String
+  firstCaptured  DateTime @default(now())
+  lastUpdated    DateTime @default(now())
+  isNew          Boolean  @default(true)
+  source         String
+  metadata       Json
 
   analysis AnalysisResult?
 
   @@index([url])
+  @@index([firstCaptured])
+  @@index([isNew])
 }
 
 model AnalysisResult {

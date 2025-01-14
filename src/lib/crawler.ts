@@ -1,7 +1,12 @@
-import axios, { AxiosError } from 'axios';
+import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { RateLimiter } from './openai';
 import crypto from 'crypto';
+import { saveArticle, markArticlesAsOld } from './db';
+import { CronJob } from 'cron';
+
+let currentCrawlJob: CronJob | null = null;
+let isCurrentlyCrawling = false;
 
 interface CrawledArticle {
   title: string;
@@ -11,6 +16,7 @@ interface CrawledArticle {
     source: string;
     timestamp: string;
     id: string;
+    sourceUrl: string;
   };
 }
 
@@ -20,10 +26,11 @@ export const SOURCES = {
     {
       name: 'OpenAI Blog',
       url: 'https://openai.com/blog',
-      selector: 'article',
-      titleSelector: 'h2',
-      contentSelector: '.content',
-      linkSelector: 'a',
+      rssUrl: 'https://openai.com/blog/rss.xml',
+      selector: 'article.post',
+      titleSelector: 'h1',
+      contentSelector: '.post-content',
+      linkSelector: 'a.post-card',
       transform: {
         url: (url: string) => url.startsWith('http') ? url : `https://openai.com${url}`
       }
@@ -31,21 +38,24 @@ export const SOURCES = {
     {
       name: 'DeepMind Research',
       url: 'https://deepmind.google/research/',
-      selector: 'article',
-      titleSelector: 'h3',
+      selector: 'article.research-card',
+      titleSelector: 'h3.research-card__title',
       contentSelector: '.research-card__description',
-      linkSelector: 'a',
+      linkSelector: 'a.research-card__link',
       transform: {
         url: (url: string) => url.startsWith('http') ? url : `https://deepmind.google${url}`
       }
     },
     {
-      name: 'Anthropic Blog',
-      url: 'https://www.anthropic.com/news',
-      selector: '.news-item, article',
-      titleSelector: 'h2, h3',
-      contentSelector: '.content, p',
-      linkSelector: 'a',
+      name: 'Anthropic Research',
+      url: 'https://www.anthropic.com/research',
+      selector: 'article.research-item',
+      titleSelector: 'h2.research-item__title',
+      contentSelector: '.research-item__description',
+      linkSelector: 'a.research-item__link',
+      transform: {
+        url: (url: string) => url.startsWith('http') ? url : `https://www.anthropic.com${url}`
+      }
     },
     {
       name: 'Microsoft AI Blog',
@@ -53,7 +63,10 @@ export const SOURCES = {
       selector: 'article.post',
       titleSelector: '.entry-title',
       contentSelector: '.entry-content',
-      linkSelector: 'a.entry-title',
+      linkSelector: '.entry-title a',
+      transform: {
+        url: (url: string) => url.startsWith('http') ? url : url
+      }
     },
   ],
   NEWS_SITES: [
@@ -143,56 +156,119 @@ const getRateLimiter = (domain: string) => {
 
 export interface CrawlMetrics {
   totalArticles: number;
-  articlesPerSource: { [key: string]: number };
-  successfulSources: string[];
+  successfulSources: { source: string }[];
   failedSources: { source: string; error: string }[];
-  averageContentLength: number;
+  crawlDuration: number;
   crawlStartTime: string;
   crawlEndTime: string;
-  crawlDuration: number;
   totalRequests: number;
   failedRequests: number;
   retryCount: number;
+  averageContentLength: number;
+  articlesPerSource: Record<string, number>;
 }
 
-let currentMetrics: CrawlMetrics = {
+let metrics: CrawlMetrics = {
   totalArticles: 0,
-  articlesPerSource: {},
   successfulSources: [],
   failedSources: [],
-  averageContentLength: 0,
+  crawlDuration: 0,
   crawlStartTime: '',
   crawlEndTime: '',
-  crawlDuration: 0,
   totalRequests: 0,
   failedRequests: 0,
   retryCount: 0,
+  averageContentLength: 0,
+  articlesPerSource: {},
 };
 
-export function resetMetrics() {
-  currentMetrics = {
+export function getCurrentMetrics(): CrawlMetrics {
+  return metrics;
+}
+
+export async function startCrawl() {
+  if (isCurrentlyCrawling) {
+    console.warn('A crawl is already in progress');
+    return {
+      success: false,
+      error: 'A crawl is already in progress',
+      metrics: getCurrentMetrics()
+    };
+  }
+
+  isCurrentlyCrawling = true;
+  metrics.crawlStartTime = new Date().toISOString();
+  metrics.totalRequests = 0;
+  metrics.failedRequests = 0;
+  metrics.retryCount = 0;
+
+  try {
+    const articles = await crawlSources();
+    metrics.crawlEndTime = new Date().toISOString();
+    metrics.crawlDuration = new Date(metrics.crawlEndTime).getTime() - new Date(metrics.crawlStartTime).getTime();
+    return {
+      success: true,
+      articles,
+      metrics: getCurrentMetrics()
+    };
+  } catch (error) {
+    console.error('Error during crawl:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error during crawl',
+      metrics: getCurrentMetrics()
+    };
+  } finally {
+    isCurrentlyCrawling = false;
+  }
+}
+
+export function scheduleCrawl(cronSchedule: string) {
+  if (currentCrawlJob) {
+    currentCrawlJob.stop();
+  }
+
+  currentCrawlJob = new CronJob(cronSchedule, async () => {
+    try {
+      await startCrawl();
+    } catch (error) {
+      console.error('Scheduled crawl failed:', error);
+    }
+  });
+
+  currentCrawlJob.start();
+}
+
+export async function analyzeCrawlData() {
+  // Reset metrics for new analysis
+  metrics = {
+    ...metrics,
     totalArticles: 0,
-    articlesPerSource: {},
     successfulSources: [],
     failedSources: [],
     averageContentLength: 0,
-    crawlStartTime: '',
-    crawlEndTime: '',
-    crawlDuration: 0,
-    totalRequests: 0,
-    failedRequests: 0,
-    retryCount: 0,
+    articlesPerSource: {},
   };
+
+  try {
+    // Mark all existing articles as old before the new crawl
+    await markArticlesAsOld();
+    
+    // Start a new crawl
+    await startCrawl();
+    
+    return metrics;
+  } catch (error) {
+    console.error('Error analyzing crawl data:', error);
+    throw error;
+  }
 }
 
-export function getCurrentMetrics(): CrawlMetrics {
-  return currentMetrics;
-}
-
-export async function crawlSource(source: Source): Promise<CrawledArticle[]> {
+export async function crawlSource(source: any): Promise<CrawledArticle[]> {
   const parsedUrl = new URL(source.url);
   const rateLimiter = getRateLimiter(parsedUrl.hostname);
   let retries = 0;
+  let articles: CrawledArticle[] = [];
 
   while (retries < MAX_RETRIES) {
     try {
@@ -201,7 +277,58 @@ export async function crawlSource(source: Source): Promise<CrawledArticle[]> {
       // Add random delay before request
       await delay(getRandomDelay());
       
-      // Use rate limiter with proper interface
+      // Try RSS feed first if available
+      if (source.rssUrl) {
+        try {
+          const rssResponse = await rateLimiter.add(() => 
+            axios.get(source.rssUrl!, {
+              headers: getHeaders(source.rssUrl!),
+              timeout: 30000,
+              maxRedirects: 5,
+              validateStatus: (status) => status < 400,
+            })
+          );
+
+          if (rssResponse.data) {
+            const $ = cheerio.load(rssResponse.data, { xmlMode: true });
+            const timestamp = new Date().toISOString();
+
+            $('item').each((_, element) => {
+              try {
+                const title = $(element).find('title').text().trim();
+                const content = $(element).find('description').text().trim();
+                const url = $(element).find('link').text().trim();
+
+                if (title && content && url) {
+                  const id = crypto.createHash('md5').update(url).digest('hex');
+                  articles.push({
+                    title,
+                    content,
+                    url,
+                    metadata: {
+                      source: source.name,
+                      timestamp,
+                      id,
+                      sourceUrl: source.rssUrl!
+                    }
+                  });
+                }
+              } catch (error) {
+                console.error(`[Crawler] Error parsing RSS article from ${source.name}:`, error);
+              }
+            });
+
+            if (articles.length > 0) {
+              console.log(`[Crawler] Successfully parsed ${articles.length} articles from RSS feed for ${source.name}`);
+              break;
+            }
+          }
+        } catch (error) {
+          console.log(`[Crawler] Failed to fetch RSS feed for ${source.name}, falling back to HTML scraping:`, error);
+        }
+      }
+
+      // Fall back to HTML scraping if RSS failed or no articles were found
       const response = await rateLimiter.add(() => 
         axios.get(source.url, {
           headers: getHeaders(source.url),
@@ -217,132 +344,103 @@ export async function crawlSource(source: Source): Promise<CrawledArticle[]> {
         throw new Error('Empty response');
       }
 
-      // Debug response data
-      console.log(`[Crawler] Response data length: ${response.data.length} bytes`);
-      console.log(`[Crawler] First 200 chars of response:`, response.data.substring(0, 200));
-
       const $ = cheerio.load(response.data);
-      const articles: CrawledArticle[] = [];
+      const timestamp = new Date().toISOString();
 
-      console.log(`[Crawler] Looking for elements matching selector: ${source.selector}`);
-      const elements = $(source.selector);
-      console.log(`[Crawler] Found ${elements.length} matching elements`);
+      $(source.selector).each((_, element) => {
+        try {
+          let title = $(element).find(source.titleSelector).first().text().trim();
+          let content = $(element).find(source.contentSelector).text().trim();
+          let url = $(element).find(source.linkSelector).first().attr('href') || '';
 
-      // Debug first element
-      if (elements.length > 0) {
-        console.log(`[Crawler] First element HTML:`, $(elements[0]).html()?.substring(0, 200));
-      }
+          // Apply transformations if defined
+          if (source.transform) {
+            if (source.transform.title) {
+              title = source.transform.title(title);
+            }
+            if (source.transform.content) {
+              content = source.transform.content(content);
+            }
+            if (source.transform.url) {
+              url = source.transform.url(url);
+            }
+          }
 
-      elements.each((_, element) => {
-        const $element = $(element);
-        
-        // Debug element selectors
-        console.log(`[Crawler] Processing element selectors for ${source.name}:`);
-        console.log(`- Title selector "${source.titleSelector}":`, $element.find(source.titleSelector).length, 'matches');
-        console.log(`- Content selector "${source.contentSelector}":`, $element.find(source.contentSelector).length, 'matches');
-        console.log(`- Link selector "${source.linkSelector}":`, $element.find(source.linkSelector).length, 'matches');
-
-        let title = $element.find(source.titleSelector).first().text().trim();
-        let content = $element.find(source.contentSelector).first().text().trim();
-        let url = $element.find(source.linkSelector).first().attr('href') || '';
-
-        // Apply transformations if they exist
-        if (source.transform) {
-          if (source.transform.title) title = source.transform.title(title);
-          if (source.transform.content) content = source.transform.content(content);
-          if (source.transform.url) url = source.transform.url(url);
-        }
-
-        // If content is empty, try getting it from the element itself
-        if (!content) {
-          content = $element.text().trim();
-        }
-
-        console.log(`[Crawler] Processing element - Title: ${title ? title.substring(0, 50) + '...' : 'none'}`);
-        console.log(`[Crawler] Content length: ${content?.length || 0} characters`);
-        console.log(`[Crawler] URL: ${url || 'none'}`);
-
-        if (title && content) {
-          articles.push({
-            title,
-            content,
-            url,
-            metadata: {
-              source: source.name,
-              timestamp: new Date().toISOString(),
-              id: crypto.randomUUID()
-            },
-          });
-        } else {
-          console.log(`[Crawler] Skipping element - missing title or content`);
+          if (title && content && url) {
+            const id = crypto.createHash('md5').update(url).digest('hex');
+            articles.push({
+              title,
+              content,
+              url,
+              metadata: {
+                source: source.name,
+                timestamp,
+                id,
+                sourceUrl: source.url
+              }
+            });
+          }
+        } catch (error) {
+          console.error(`[Crawler] Error parsing article from ${source.name}:`, error);
         }
       });
 
-      console.log(`[Crawler] Successfully found ${articles.length} articles from ${source.name}`);
-      return articles;
-    } catch (error) {
-      currentMetrics.retryCount++;
-      if (axios.isAxiosError(error)) {
-        console.error(`[Crawler] Error crawling ${source.name}:`, {
-          message: error.message,
-          status: error.response?.status,
-          statusText: error.response?.statusText,
-          url: error.config?.url
-        });
+      if (articles.length > 0) {
+        // Save articles to database
+        const savedArticles = await Promise.all(
+          articles.map(article => 
+            saveArticle({
+              url: article.url,
+              title: article.title,
+              content: article.content,
+              source: article.metadata.source,
+              metadata: article.metadata,
+            })
+          )
+        );
+
+        // Update metrics
+        metrics.totalArticles += savedArticles.filter(result => result.isNew).length;
+        metrics.successfulSources.push({ source: source.name });
+        metrics.averageContentLength = articles.reduce((acc, curr) => acc + curr.content.length, 0) / articles.length;
+        metrics.articlesPerSource[source.name] = (metrics.articlesPerSource[source.name] || 0) + savedArticles.filter(result => result.isNew).length;
+
+        break; // Exit retry loop on success
       } else {
-        console.error(`[Crawler] Unknown error crawling ${source.name}:`, error);
+        throw new Error('No articles found');
       }
+    } catch (error) {
       retries++;
-      if (retries < MAX_RETRIES) {
-        console.log(`[Crawler] Retrying in ${RETRY_DELAY / 1000} seconds...`);
-        await delay(RETRY_DELAY);
-      } else {
+      metrics.retryCount++;
+      metrics.failedRequests++;
+
+      if (retries === MAX_RETRIES) {
+        console.error(`[Crawler] Failed to crawl ${source.name} after ${MAX_RETRIES} attempts:`, error);
+        metrics.failedSources.push({
+          source: source.name,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
         return [];
       }
+
+      console.log(`[Crawler] Retrying ${source.name} in ${RETRY_DELAY}ms...`);
+      await delay(RETRY_DELAY);
     }
   }
 
-  return [];
+  return articles;
 }
 
-export async function crawlAllSources(): Promise<CrawledArticle[]> {
-  resetMetrics();
-  currentMetrics.crawlStartTime = new Date().toISOString();
-  const allArticles: CrawledArticle[] = [];
+export async function crawlSources(): Promise<CrawledArticle[]> {
+  const allSources = [
+    ...SOURCES.RESEARCH_BLOGS,
+    ...SOURCES.NEWS_SITES,
+    ...SOURCES.ACADEMIC,
+  ];
 
-  for (const category of Object.values(SOURCES)) {
-    for (const source of category) {
-      currentMetrics.totalRequests++;
-      try {
-        const articles = await crawlSource(source);
-        allArticles.push(...articles);
-        
-        // Update metrics
-        currentMetrics.articlesPerSource[source.name] = articles.length;
-        currentMetrics.successfulSources.push(source.name);
-        
-        const totalContentLength = articles.reduce((sum, article) => sum + article.content.length, 0);
-        if (articles.length > 0) {
-          const sourceAverage = totalContentLength / articles.length;
-          currentMetrics.averageContentLength = 
-            (currentMetrics.averageContentLength * currentMetrics.totalArticles + sourceAverage * articles.length) / 
-            (currentMetrics.totalArticles + articles.length);
-        }
-        currentMetrics.totalArticles += articles.length;
-      } catch (error) {
-        currentMetrics.failedRequests++;
-        currentMetrics.failedSources.push({
-          source: source.name,
-          error: error instanceof Error ? error.message : 'Unknown error'
-        });
-      }
-    }
-  }
+  const results = await Promise.all(allSources.map(crawlSource));
+  const allArticles = results.flat();
 
-  currentMetrics.crawlEndTime = new Date().toISOString();
-  currentMetrics.crawlDuration = new Date(currentMetrics.crawlEndTime).getTime() - new Date(currentMetrics.crawlStartTime).getTime();
-
-  console.log(`Crawled ${allArticles.length} articles`);
   return allArticles;
 }
 
@@ -353,6 +451,7 @@ const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 type Source = {
   name: string;
   url: string;
+  rssUrl?: string;
   selector: string;
   titleSelector: string;
   contentSelector: string;

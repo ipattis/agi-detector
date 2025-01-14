@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom';
-import { TextEncoder, TextDecoder } from 'util'
+import { TextEncoder, TextDecoder } from 'util';
 
-global.TextEncoder = TextEncoder
-global.TextDecoder = TextDecoder as any
+// Add TextEncoder and TextDecoder to the global scope for tests
+Object.assign(global, { TextEncoder, TextDecoder });
 
 // Add any global test utilities/helpers here

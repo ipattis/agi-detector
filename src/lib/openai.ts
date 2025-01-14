@@ -23,14 +23,16 @@ Format the response as JSON:
   "explanation": string // Brief explanation of the findings
 }`;
 
+type QueuedFunction<T> = () => Promise<T>;
+
 // Rate limiter for API calls
 export class RateLimiter {
-  private queue: Array<() => Promise<any>> = [];
+  private queue: Array<QueuedFunction<unknown>> = [];
   private processing = false;
   private lastCallTime = 0;
   private minDelay = 1000; // Minimum delay between calls (1 second)
 
-  async add<T>(fn: () => Promise<T>): Promise<T> {
+  async add<T>(fn: QueuedFunction<T>): Promise<T> {
     return new Promise((resolve, reject) => {
       this.queue.push(async () => {
         try {
