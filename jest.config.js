@@ -1,15 +1,20 @@
-module.exports = {
-  testEnvironment: "jest-environment-jsdom",
+/** @type {import('jest').Config} */
+const config = {
+  testEnvironment: 'jsdom',
+  setupFilesAfterEnv: ['<rootDir>/src/lib/test-utils/setup.ts'],
   moduleNameMapper: {
-    "^@/(.*)$": "<rootDir>/src/$1",
+    '^@/(.*)$': '<rootDir>/src/$1',
+    '\\.(css|less|sass|scss)$': 'identity-obj-proxy',
   },
-  setupFilesAfterEnv: ["<rootDir>/src/lib/test-utils/setup.ts"],
-  testMatch: ["**/__tests__/**/*.{ts,tsx}"],
   transform: {
-    "^.+\\.(ts|tsx)$": "babel-jest",
+    '^.+\\.(js|jsx|ts|tsx)$': 'babel-jest',
   },
+  moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
+  testPathIgnorePatterns: ['/node_modules/', '/.next/'],
   transformIgnorePatterns: [
-    "/node_modules/",
-    "^.+\\.module\\.(css|sass|scss)$",
+    '/node_modules/',
+    '^.+\\.module\\.(css|sass|scss)$',
   ],
-};
+}
+
+module.exports = config

@@ -1,9 +1,16 @@
-const React = require('react');
-const { render } = require('@testing-library/react');
-const LoadingSpinner = require('@/app/components/shared/LoadingSpinner').default;
+import React from 'react';
+import { render } from '@testing-library/react';
+import LoadingSpinner from '@/app/components/shared/LoadingSpinner';
 
-describe('LoadingSpinner Component', () => {
+describe('LoadingSpinner', () => {
   it('renders without crashing', () => {
-    render(<LoadingSpinner />)
-  })
-})
+    const { container } = render(<LoadingSpinner />);
+    expect(container.firstChild).toBeInTheDocument();
+  });
+
+  it('has the correct styling', () => {
+    const { container } = render(<LoadingSpinner />);
+    const spinner = container.firstChild;
+    expect(spinner).toHaveClass('animate-spin');
+  });
+});
