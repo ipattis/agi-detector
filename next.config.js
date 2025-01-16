@@ -2,6 +2,9 @@
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  experimental: {
+    appDir: true
+  },
   // Optimize images
   images: {
     domains: [],

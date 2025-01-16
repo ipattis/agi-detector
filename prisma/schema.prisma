@@ -1,9 +1,6 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -13,33 +10,40 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model CrawlResult {
-  id             String   @id @default(uuid())
-  url            String   @unique
-  title          String
-  content        String
-  firstCaptured  DateTime @default(now())
-  lastUpdated    DateTime @default(now())
-  isNew          Boolean  @default(true)
-  source         String
-  metadata       Json
+model Source {
+  id            String       @id @default(uuid())
+  url           String      @unique
+  contentHints  String?     @db.Text  // User-provided hints about content location
+  structure     Json?       // AI-detected structure
+  crawlSchedule String?     // cron expression
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  status        SourceStatus @default(ACTIVE)
+  lastError     String?     @db.Text
+  entries       Entry[]
 
-  analysis AnalysisResult?
-
-  @@index([url])
-  @@index([firstCaptured])
-  @@index([isNew])
+  @@index([status])
 }
 
-model AnalysisResult {
-  id         String   @id @default(uuid())
-  crawlId    String   @unique
-  score      Float
-  indicators String[]
-  confidence Float
-  timestamp  DateTime @default(now())
+model Entry {
+  id          String   @id @default(uuid())
+  title       String?
+  content     String   @db.Text
+  summary     String?  @db.Text
+  metadata    Json
+  source      Source   @relation(fields: [sourceId], references: [id])
+  sourceId    String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  hash        String   // Content hash to detect changes
 
-  crawl CrawlResult @relation(fields: [crawlId], references: [id])
+  @@unique([sourceId, hash])
+  @@index([createdAt])
+}
 
-  @@index([score])
+enum SourceStatus {
+  ACTIVE
+  PAUSED
+  ERROR
+  COMPLETED
 }
