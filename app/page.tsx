@@ -18,6 +18,7 @@ interface Entry {
   title: string | null
   content: string
   createdAt: string
+  sourceId: string
 }
 
 interface DashboardStats {
@@ -53,7 +54,7 @@ export default function Home() {
       const allEntries = sources.flatMap(source => 
         source.entries.map(entry => ({
           ...entry,
-          sourceUrl: source.url
+          sourceId: source.id
         }))
       )
       const recentEntries = allEntries
@@ -110,103 +111,47 @@ export default function Home() {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4 mb-8">
-          <div className="bg-gray-800 overflow-hidden shadow rounded-lg">
-            <div className="p-5">
-              <div className="flex items-center">
-                <div className="flex-shrink-0">
-                  <svg className="h-6 w-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-                  </svg>
-                </div>
-                <div className="ml-5 w-0 flex-1">
-                  <dl>
-                    <dt className="text-sm font-medium text-gray-400 truncate">Total Sources</dt>
-                    <dd className="text-lg font-medium text-white">{stats?.totalSources}</dd>
-                  </dl>
-                </div>
-              </div>
-            </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+          <div className="bg-gray-800 p-6 rounded-lg">
+            <h3 className="text-lg font-semibold mb-2">Total Sources</h3>
+            <p className="text-3xl font-bold">{stats?.totalSources || 0}</p>
           </div>
-
-          <div className="bg-gray-800 overflow-hidden shadow rounded-lg">
-            <div className="p-5">
-              <div className="flex items-center">
-                <div className="flex-shrink-0">
-                  <svg className="h-6 w-6 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </div>
-                <div className="ml-5 w-0 flex-1">
-                  <dl>
-                    <dt className="text-sm font-medium text-gray-400 truncate">Active Sources</dt>
-                    <dd className="text-lg font-medium text-white">{stats?.activeSources}</dd>
-                  </dl>
-                </div>
-              </div>
-            </div>
+          <div className="bg-gray-800 p-6 rounded-lg">
+            <h3 className="text-lg font-semibold mb-2">Active Sources</h3>
+            <p className="text-3xl font-bold text-green-500">{stats?.activeSources || 0}</p>
           </div>
-
-          <div className="bg-gray-800 overflow-hidden shadow rounded-lg">
-            <div className="p-5">
-              <div className="flex items-center">
-                <div className="flex-shrink-0">
-                  <svg className="h-6 w-6 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </div>
-                <div className="ml-5 w-0 flex-1">
-                  <dl>
-                    <dt className="text-sm font-medium text-gray-400 truncate">Error Sources</dt>
-                    <dd className="text-lg font-medium text-white">{stats?.errorSources}</dd>
-                  </dl>
-                </div>
-              </div>
-            </div>
+          <div className="bg-gray-800 p-6 rounded-lg">
+            <h3 className="text-lg font-semibold mb-2">Error Sources</h3>
+            <p className="text-3xl font-bold text-red-500">{stats?.errorSources || 0}</p>
           </div>
-
-          <div className="bg-gray-800 overflow-hidden shadow rounded-lg">
-            <div className="p-5">
-              <div className="flex items-center">
-                <div className="flex-shrink-0">
-                  <svg className="h-6 w-6 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                  </svg>
-                </div>
-                <div className="ml-5 w-0 flex-1">
-                  <dl>
-                    <dt className="text-sm font-medium text-gray-400 truncate">Total Entries</dt>
-                    <dd className="text-lg font-medium text-white">{stats?.totalEntries}</dd>
-                  </dl>
-                </div>
-              </div>
-            </div>
+          <div className="bg-gray-800 p-6 rounded-lg">
+            <h3 className="text-lg font-semibold mb-2">Total Entries</h3>
+            <p className="text-3xl font-bold">{stats?.totalEntries || 0}</p>
           </div>
         </div>
 
         {/* Recent Entries */}
-        <div className="bg-gray-800 shadow sm:rounded-lg">
-          <div className="px-4 py-5 sm:p-6">
-            <h2 className="text-lg font-medium text-white mb-4">Recent Entries</h2>
-            {stats?.recentEntries && stats.recentEntries.length > 0 ? (
-              <div className="space-y-4">
-                {stats.recentEntries.map((entry) => (
-                  <div key={entry.id} className="bg-gray-700 p-4 rounded-md">
-                    <h3 className="text-md font-medium text-white">
-                      {entry.title || 'Untitled Entry'}
-                    </h3>
-                    <p className="mt-1 text-sm text-gray-300">
-                      {entry.content.substring(0, 200)}...
-                    </p>
-                    <div className="mt-2 text-xs text-gray-400">
-                      Crawled: {new Date(entry.createdAt).toLocaleString()}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-gray-400">No entries found</p>
-            )}
+        <div className="bg-gray-800 rounded-lg p-6">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-bold">Recent Entries</h2>
+            <Link href="/submit" className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded">
+              Add New Source
+            </Link>
+          </div>
+          <div className="space-y-4">
+            {stats?.recentEntries.map((entry) => (
+              <Link 
+                key={entry.id} 
+                href={`/sources/${entry.sourceId}`}
+                className="block border border-gray-700 rounded-lg p-4 hover:bg-gray-700 transition-colors"
+              >
+                <h3 className="text-lg font-semibold mb-2">{entry.title || 'Untitled'}</h3>
+                <p className="text-gray-300 mb-2">{entry.content}</p>
+                <p className="text-sm text-gray-400">
+                  Added: {new Date(entry.createdAt).toLocaleString()}
+                </p>
+              </Link>
+            ))}
           </div>
         </div>
       </div>

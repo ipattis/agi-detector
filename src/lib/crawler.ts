@@ -28,6 +28,11 @@ const COMMON_COOKIES = [
   'OptanonConsent=isGpcEnabled=0&datestamp=2024-01-16T12:00:00.000Z&version=6.0.0',
 ];
 
+interface ContentScore {
+  element: cheerio.Element;
+  score: number;
+}
+
 const getRandomUserAgent = () => USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
 
 async function fetchWithPuppeteer(url: string, maxRetries = 3) {
@@ -36,13 +41,11 @@ async function fetchWithPuppeteer(url: string, maxRetries = 3) {
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     let browser: Browser | undefined;
     try {
-      // Add random delay between retries
       if (attempt > 0) {
         const delay = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
         await new Promise(resolve => setTimeout(resolve, delay));
       }
 
-      // Launch browser
       browser = await puppeteer.launch({
         headless: true,
         args: [
@@ -55,29 +58,21 @@ async function fetchWithPuppeteer(url: string, maxRetries = 3) {
         ]
       });
 
-      // Create new page
       const page = await browser.newPage();
-
-      // Set viewport
-      await page.setViewport({
-        width: 1920,
-        height: 1080
-      });
-
-      // Set user agent
+      await page.setViewport({ width: 1920, height: 1080 });
       await page.setUserAgent(getRandomUserAgent());
-
-      // Set extra headers
       await page.setExtraHTTPHeaders({
         'Accept-Language': 'en-US,en;q=0.9',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
         'DNT': '1',
       });
 
-      // Set cookies
-      await page.setCookie(...COMMON_COOKIES.map(cookie => ({ name: cookie.split('=')[0], value: cookie.split('=')[1], domain: new URL(url).hostname })));
+      await page.setCookie(...COMMON_COOKIES.map(cookie => ({ 
+        name: cookie.split('=')[0], 
+        value: cookie.split('=')[1], 
+        domain: new URL(url).hostname 
+      })));
 
-      // Navigate to page
       const response = await page.goto(url, {
         waitUntil: 'networkidle0',
         timeout: 30000
@@ -101,10 +96,7 @@ async function fetchWithPuppeteer(url: string, maxRetries = 3) {
         throw new Error(`HTTP error ${status}`);
       }
 
-      // Wait for content to load
       await page.waitForSelector('body', { timeout: 5000 });
-
-      // Get page content
       const content = await page.content();
 
       return {
@@ -126,120 +118,184 @@ async function fetchWithPuppeteer(url: string, maxRetries = 3) {
   throw lastError || new Error('Max retries reached');
 }
 
-export async function crawlUrl(sourceId: string): Promise<void> {
-  try {
-    // Get source from database
-    const source = await prisma.source.findUnique({
-      where: { id: sourceId },
-    });
-
-    if (!source) {
-      throw new Error(`Source ${sourceId} not found`);
-    }
-
-    // Parse content hints
-    const hints = parseContentHints(source.contentHints || '');
-
-    // Fetch the page with Puppeteer
-    const response = await fetchWithPuppeteer(source.url);
-
-    // Load the HTML into cheerio
-    const $ = cheerio.load(response.data);
-
-    // Extract content using hints
-    const title = extractContent(hints.title, $) || $('title').text() || '';
-    const content = extractContent(hints.content, $) || $('body').text() || '';
-
-    // Clean the content
-    const cleanedTitle = cleanText(title);
-    const cleanedContent = cleanText(content);
-
-    // Generate hash
-    const hash = crypto
-      .createHash('sha256')
-      .update(cleanedContent)
-      .digest('hex');
-
-    // Create new entry
-    await prisma.entry.create({
-      data: {
-        sourceId,
-        title: cleanedTitle,
-        content: cleanedContent,
-        hash,
-        metadata: {
-          statusCode: response.status,
-          contentLength: response.data.length,
-          headers: JSON.stringify(response.headers)
-        }
-      },
-    });
-
-    // Update source status
-    await prisma.source.update({
-      where: { id: sourceId },
-      data: { 
-        status: 'ACTIVE',
-        lastError: null
-      },
-    });
-
-  } catch (error) {
-    console.error(`Error crawling ${sourceId}:`, error);
-    await updateSourceError(sourceId, error instanceof Error ? error.message : 'Unknown error');
-  }
-}
-
-function parseContentHints(hints: string): { title: string; content: string } {
-  const result = {
-    title: '',
-    content: ''
-  };
-
-  const lines = hints.split('\n').map(line => line.trim());
+function detectMainContent($: cheerio.Root): { content: string; score: number } {
+  const contentScores: ContentScore[] = [];
   
-  for (const line of lines) {
-    if (line.startsWith('title:')) {
-      result.title = line.replace('title:', '').trim();
-    } else if (line.startsWith('content:')) {
-      result.content = line.replace('content:', '').trim();
+  // First, try to find content using schema.org markup
+  const jsonLd = $('script[type="application/ld+json"]').text();
+  if (jsonLd) {
+    try {
+      const data = JSON.parse(jsonLd);
+      if (data.articleBody || (data['@graph'] && data['@graph'].find((item: any) => item.articleBody))) {
+        const articleBody = data.articleBody || data['@graph'].find((item: any) => item.articleBody).articleBody;
+        return {
+          content: cleanText(articleBody),
+          score: 100
+        };
+      }
+    } catch (e) {
+      // Continue with DOM-based detection if JSON-LD parsing fails
     }
   }
+  
+  // Try common article selectors first
+  const commonSelectors = [
+    'article[class*="post"]',
+    'div[class*="post-content"]',
+    'div[class*="article-content"]',
+    'div[class*="entry-content"]',
+    'main article',
+    'div[role="main"]'
+  ];
 
-  return result;
-}
-
-type CheerioRoot = ReturnType<typeof cheerio.load>;
-
-function extractContent(selector: string, $: CheerioRoot): string {
-  if (!selector) return '';
-
-  try {
-    // Try the exact selector first
-    let elements = $(selector);
-    
-    // If no elements found, try some variations
-    if (elements.length === 0) {
-      // Try without class modifiers
-      const baseSelector = selector.replace(/\.[^\s.#]+/g, '');
-      elements = $(baseSelector);
-      
-      // Try with partial class match
-      if (elements.length === 0) {
-        const classMatch = selector.match(/\.[^\s.#]+/);
-        if (classMatch) {
-          const partialClass = classMatch[0];
-          elements = $(`*[class*="${partialClass.substring(1)}"]`);
-        }
+  for (const selector of commonSelectors) {
+    const element = $(selector).first();
+    if (element.length) {
+      const text = element.text();
+      if (text.length > 500) { // Minimum content length
+        element.find('script, style, iframe, form, nav, header, footer').remove();
+        return {
+          content: cleanText(element.text()),
+          score: 90
+        };
       }
     }
-
-    // Get text from all matching elements
-    return elements.map((_, el) => $(el).text()).get().join('\n');
-  } catch (error) {
-    console.error('Error extracting content:', error);
-    return '';
   }
+  
+  // Fallback to scoring-based detection
+  $('article, div, section').each((_, element) => {
+    const $el = $(element);
+    let score = 0;
+    
+    // Text length score (more weight)
+    const text = $el.text();
+    score += text.length / 50;
+
+    // Density of paragraph tags (more weight)
+    const paragraphs = $el.find('p').length;
+    score += paragraphs * 20;
+
+    // Presence of article-related classes/ids (more specific)
+    const classAndId = ($el.attr('class') || '') + ($el.attr('id') || '');
+    if (/article|post|content|entry|blog/i.test(classAndId)) {
+      score += 50;
+    }
+
+    // Negative indicators (stronger penalties)
+    if (/comment|sidebar|footer|header|nav|menu|widget|social|share|related|ad/i.test(classAndId)) {
+      score -= 100;
+    }
+
+    // Check for meaningful HTML structure
+    const hasHeadings = $el.find('h1, h2, h3').length > 0;
+    if (hasHeadings) score += 20;
+
+    // Check for images with captions
+    const hasImages = $el.find('img[alt], figure').length > 0;
+    if (hasImages) score += 10;
+
+    // Check for code blocks (common in technical blogs)
+    const hasCode = $el.find('pre, code').length > 0;
+    if (hasCode) score += 15;
+
+    contentScores.push({ element, score });
+  });
+
+  // Sort by score and get the best match
+  const bestMatch = contentScores.sort((a, b) => b.score - a.score)[0];
+  
+  if (bestMatch && bestMatch.score > 100) { // Higher threshold
+    const $content = $(bestMatch.element);
+    // Remove non-content elements
+    $content.find('script, style, iframe, form, nav, header, footer, .social, .share, .related, .comments').remove();
+    
+    const cleanContent = cleanText($content.text());
+    // Ensure minimum content length
+    if (cleanContent.length > 500) {
+      return {
+        content: cleanContent,
+        score: bestMatch.score
+      };
+    }
+  }
+  
+  return { content: '', score: 0 };
+}
+
+function detectTitle($: cheerio.Root): string {
+  const candidates = [
+    // Try article heading first
+    $('article h1').first().text(),
+    // Try main heading
+    $('main h1').first().text(),
+    // Try page title
+    $('h1').first().text(),
+    // Fallback to meta title
+    $('meta[property="og:title"]').attr('content'),
+    $('title').text()
+  ];
+
+  for (const candidate of candidates) {
+    if (candidate && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+
+  return '';
+}
+
+function detectPublishDate($: cheerio.Root): string | null {
+  // Try schema.org metadata
+  const jsonLd = $('script[type="application/ld+json"]').text();
+  if (jsonLd) {
+    try {
+      const data = JSON.parse(jsonLd);
+      if (data.datePublished) {
+        return new Date(data.datePublished).toISOString();
+      }
+    } catch (e) {
+      // Continue if JSON parsing fails
+    }
+  }
+
+  // Try meta tags
+  const metaDates = [
+    $('meta[property="article:published_time"]').attr('content'),
+    $('meta[name="publication-date"]').attr('content'),
+    $('meta[name="date"]').attr('content')
+  ];
+
+  for (const date of metaDates) {
+    if (date) {
+      try {
+        return new Date(date).toISOString();
+      } catch (e) {
+        // Continue if date parsing fails
+      }
+    }
+  }
+
+  // Try common date elements
+  const dateSelectors = [
+    'time[datetime]',
+    '[class*="date"]',
+    '[class*="time"]',
+    '[itemprop="datePublished"]'
+  ];
+
+  for (const selector of dateSelectors) {
+    const element = $(selector).first();
+    if (element.length) {
+      const dateStr = element.attr('datetime') || element.text();
+      try {
+        return new Date(dateStr).toISOString();
+      } catch (e) {
+        // Continue if date parsing fails
+      }
+    }
+  }
+
+  return null;
 }
 
 function cleanText(text: string): string {
@@ -257,4 +313,113 @@ async function updateSourceError(sourceId: string, error: string): Promise<void>
       lastError: error
     },
   });
+}
+
+export async function crawlUrl(sourceId: string): Promise<void> {
+  try {
+    const source = await prisma.source.findUnique({
+      where: { id: sourceId },
+    });
+
+    if (!source) {
+      throw new Error(`Source ${sourceId} not found`);
+    }
+
+    console.log('Fetching URL:', source.url);
+    const response = await fetchWithPuppeteer(source.url);
+    console.log('Response status:', response.status);
+    console.log('Response length:', response.data.length);
+
+    const $ = cheerio.load(response.data);
+    console.log('Loaded HTML with cheerio');
+
+    // Wait for dynamic content to load (if any)
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    // Detect content intelligently
+    console.log('Attempting to detect content...');
+    let { content, score } = detectMainContent($);
+    console.log('Initial content detection:', { found: !!content, score });
+
+    if (!content) {
+      console.log('First attempt failed, trying alternative strategy...');
+      // Try again with a different strategy
+      $('script').remove(); // Remove all scripts to clean up the DOM
+      content = $('body').text();
+      console.log('Body text length:', content.length);
+      
+      if (content.length > 500) {
+        score = 50; // Default score for body content
+        console.log('Using body text as fallback');
+      } else {
+        console.log('Body text too short:', content.length);
+        throw new Error('Could not detect main content');
+      }
+    }
+
+    // Detect title intelligently
+    console.log('Detecting title...');
+    let title = detectTitle($);
+    console.log('Initial title detection:', { found: !!title });
+
+    if (!title) {
+      console.log('Title not found, extracting from URL...');
+      // Try to extract title from URL if not found in content
+      const urlParts = source.url.split('/');
+      const lastPart = urlParts[urlParts.length - 1];
+      title = lastPart
+        .replace(/-/g, ' ')
+        .replace(/\.[^/.]+$/, '') // Remove file extension
+        .split(' ')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ');
+      console.log('Generated title:', title);
+    }
+
+    // Detect publish date
+    console.log('Detecting publish date...');
+    const publishDate = detectPublishDate($);
+    console.log('Publish date:', publishDate);
+
+    // Generate hash
+    const hash = crypto
+      .createHash('sha256')
+      .update(content)
+      .digest('hex');
+
+    console.log('Creating entry...');
+    // Create new entry
+    await prisma.entry.create({
+      data: {
+        sourceId,
+        title,
+        content,
+        hash,
+        metadata: {
+          statusCode: response.status,
+          contentLength: response.data.length,
+          headers: response.headers,
+          publishDate,
+          contentScore: score,
+          crawledAt: new Date().toISOString()
+        }
+      },
+    });
+
+    console.log('Updating source status...');
+    // Update source status
+    await prisma.source.update({
+      where: { id: sourceId },
+      data: { 
+        status: 'ACTIVE',
+        lastError: null
+      },
+    });
+
+    console.log('Crawl completed successfully');
+
+  } catch (error) {
+    console.error(`Error crawling ${sourceId}:`, error);
+    await updateSourceError(sourceId, error instanceof Error ? error.message : 'Unknown error');
+  }
 }
